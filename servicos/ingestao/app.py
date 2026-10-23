@@ -8,15 +8,29 @@ Rodar: uvicorn servicos.ingestao.app:app --port 8001
 """
 from fastapi import FastAPI
 from pydantic import BaseModel
+import os
+import json
 
 from servicos.comum.embeddings import Vetorizador
 
 app = FastAPI(title="Ingestao - C2.A2")
 
 vetorizador = Vetorizador()
-INDICE = []
+ARQUIVO_INDICE = "indice.json"
 
+def carregar_indice() -> list:
+    """Carrega o índice do disco ao iniciar a aplicação."""
+    if os.path.exists(ARQUIVO_INDICE):
+        with open(ARQUIVO_INDICE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
 
+def persistir_indice(dados: list):
+    """Salva o índice no disco após cada nova indexação."""
+    with open(ARQUIVO_INDICE, "w", encoding="utf-8") as f:
+        json.dump(dados, f, ensure_ascii=False, indent=2)
+
+INDICE = carregar_indice()
 class Documento(BaseModel):
     texto: str
     origem: str = "desconhecida"
@@ -47,4 +61,4 @@ def indice():
 def saude():
     return {"status": "ok", "documentos": len(INDICE)}
 
-# TAREFA 1: persistir o indice (arquivo ou banco vetorial).
+
