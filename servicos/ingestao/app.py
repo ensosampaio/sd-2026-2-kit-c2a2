@@ -1,64 +1,80 @@
-"""
-Servico 1 - INGESTAO: recebe documentos, gera embeddings e armazena.
-
-JA PRONTO: indexacao em memoria e a rota de status.
-TAREFA 1: persistir o indice em disco para nao perder ao reiniciar.
-
-Rodar: uvicorn servicos.ingestao.app:app --port 8001
-"""
-from fastapi import FastAPI
-from pydantic import BaseModel
-import os
+"""API de ingestao: publica documentos na fila Redis para processamento assincrono."""
 import json
+import os
+from pathlib import Path
 
-from servicos.comum.embeddings import Vetorizador
+import redis
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
 app = FastAPI(title="Ingestao - C2.A2")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+FILA_INGESTAO = os.getenv("FILA_INGESTAO", "rag:ingestao:pendentes")
+ARQUIVO_INDICE = Path(
+    os.getenv("ARQUIVO_INDICE", str(Path(__file__).with_name("indice.json")))
+)
 
-vetorizador = Vetorizador()
-ARQUIVO_INDICE = "indice.json"
+cliente_redis = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
-def carregar_indice() -> list:
-    """Carrega o índice do disco ao iniciar a aplicação."""
-    if os.path.exists(ARQUIVO_INDICE):
-        with open(ARQUIVO_INDICE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
 
-def persistir_indice(dados: list):
-    """Salva o índice no disco após cada nova indexação."""
-    with open(ARQUIVO_INDICE, "w", encoding="utf-8") as f:
-        json.dump(dados, f, ensure_ascii=False, indent=2)
-
-INDICE = carregar_indice()
 class Documento(BaseModel):
-    texto: str
+    texto: str = Field(min_length=1)
     origem: str = "desconhecida"
 
 
-@app.post("/indexar")
+def carregar_indice() -> list:
+    """Le os documentos persistidos; vetores sao calculados na recuperacao."""
+    if not ARQUIVO_INDICE.exists():
+        return []
+    try:
+        with ARQUIVO_INDICE.open("r", encoding="utf-8") as arquivo:
+            dados = json.load(arquivo)
+        if not isinstance(dados, list):
+            raise ValueError("O indice precisa conter uma lista de documentos.")
+        return dados
+    except (json.JSONDecodeError, ValueError) as erro:
+        raise HTTPException(status_code=500, detail=f"Indice invalido: {erro}") from erro
+
+
+@app.post("/indexar", status_code=202)
 def indexar(docs: list[Documento]):
-    textos = [d.texto for d in docs]
-    vetorizador.ajustar([d["texto"] for d in INDICE] + textos or textos)
-    INDICE.clear()
-    # reindexa tudo com o vocabulario novo
-    for d in docs:
-        INDICE.append({"texto": d.texto, "origem": d.origem})
-    for item in INDICE:
-        item["vetor"] = vetorizador.vetorizar(item["texto"])
-    return {"indexados": len(INDICE)}
+    """Publica documentos na fila; o worker fara a persistencia em segundo plano."""
+    if not docs:
+        raise HTTPException(status_code=400, detail="Envie pelo menos um documento.")
+
+    payload = [documento.model_dump() for documento in docs]
+    try:
+        cliente_redis.rpush(FILA_INGESTAO, json.dumps(payload, ensure_ascii=False))
+    except redis.RedisError as erro:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Nao foi possivel publicar na fila Redis: {erro}",
+        ) from erro
+
+    return {
+        "status": "enfileirado",
+        "documentos_enfileirados": len(payload),
+        "fila": FILA_INGESTAO,
+        "mensagem": "O worker processara os documentos de forma assincrona.",
+    }
 
 
 @app.get("/indice")
 def indice():
-    """Consumido pelo servico de recuperacao."""
-    return {"total": len(INDICE),
-            "itens": [{"texto": i["texto"], "origem": i["origem"],
-                       "vetor": i["vetor"]} for i in INDICE]}
+    """Endpoint REST consumido pelo servico de recuperacao."""
+    itens = carregar_indice()
+    return {"total": len(itens), "itens": itens}
 
 
 @app.get("/saude")
 def saude():
-    return {"status": "ok", "documentos": len(INDICE)}
-
-
+    try:
+        cliente_redis.ping()
+        redis_status = "ok"
+    except redis.RedisError:
+        redis_status = "indisponivel"
+    return {
+        "status": "ok" if redis_status == "ok" else "degradado",
+        "redis": redis_status,
+        "documentos": len(carregar_indice()),
+    }
