@@ -43,14 +43,16 @@ def processar(payload: str) -> None:
         raise ValueError("Mensagem da fila precisa ser uma lista de documentos.")
 
     indice = carregar_indice()
+    existentes = {(item["texto"], item["origem"]) for item in indice}
     for documento in novos_documentos:
         texto = str(documento.get("texto", "")).strip()
         if not texto:
             continue
-        indice.append({
-            "texto": texto,
-            "origem": documento.get("origem", "desconhecida"),
-        })
+        origem = documento.get("origem", "desconhecida")
+        if (texto, origem) in existentes:
+            continue  # reindexar o mesmo documento nao duplica o indice
+        existentes.add((texto, origem))
+        indice.append({"texto": texto, "origem": origem})
     salvar_indice(indice)
     print(f"Mensagem processada: {len(novos_documentos)} documento(s). Total: {len(indice)}")
 
