@@ -11,7 +11,7 @@
 
 ## Pendentes para fechar a entrega (o README ja descreve o resultado final)
 
-- [ ] **7. Containerizacao (Arthur)** - criar `Dockerfile`, `.dockerignore` e completar o `docker-compose.yml` com os servicos `ingestao` (8001), `worker`, `recuperacao` (8002) e `geracao` (8003), alem do `redis` que ja existe. Ingestao e worker compartilham um volume com `ARQUIVO_INDICE=/dados/indice.json`; os servicos se enxergam por nome (`URL_INGESTAO=http://ingestao:8001`, `URL_RECUPERACAO=http://recuperacao:8002`, `REDIS_URL=redis://redis:6379/0`) e o `uvicorn` sobe com `--host 0.0.0.0`. Validar com `docker compose up --build -d`.
+- [x] **7. Containerizacao (Arthur)** - criar `Dockerfile`, `.dockerignore` e completar o `docker-compose.yml` com os servicos `ingestao` (8001), `worker`, `recuperacao` (8002) e `geracao` (8003), alem do `redis` que ja existe. Ingestao e worker compartilham um volume com `ARQUIVO_INDICE=/dados/indice.json`; os servicos se enxergam por nome (`URL_INGESTAO=http://ingestao:8001`, `URL_RECUPERACAO=http://recuperacao:8002`, `REDIS_URL=redis://redis:6379/0`) e o `uvicorn` sobe com `--host 0.0.0.0`. Validar com `docker compose up --build -d`.
 - [ ] **8. Scripts de demonstracao (Lucas)** - criar `scripts/indexar_documentos.py` (le `documentos/*.txt`, envia para `POST /indexar` com `origem` = nome do arquivo e espera o worker processar consultando `GET /indice`) e `scripts/perguntar.py` (faz `POST /perguntar` com a pergunta passada na linha de comando e imprime o status HTTP e o JSON).
 
 ## Extensoes opcionais

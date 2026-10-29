@@ -1,3 +1,7 @@
+x-app: &app
+  build: .
+  restart: unless-stopped
+
 services:
   redis:
     image: redis:7-alpine
@@ -9,3 +13,61 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  ingestao:
+    <<: *app
+    container_name: c2a2-ingestao
+    command: uvicorn servicos.ingestao.app:app --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      ARQUIVO_INDICE: /dados/indice.json
+    volumes:
+      - dados:/dados
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: *app
+    container_name: c2a2-worker
+    command: python -m servicos.ingestao.worker
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      ARQUIVO_INDICE: /dados/indice.json
+    volumes:
+      - dados:/dados
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  recuperacao:
+    <<: *app
+    container_name: c2a2-recuperacao
+    command: uvicorn servicos.recuperacao.app:app --host 0.0.0.0 --port 8002
+    ports:
+      - "8002:8002"
+    environment:
+      URL_INGESTAO: http://ingestao:8001
+    depends_on:
+      - ingestao
+
+  geracao:
+    <<: *app
+    container_name: c2a2-geracao
+    command: uvicorn servicos.geracao.app:app --host 0.0.0.0 --port 8003
+    ports:
+      - "8003:8003"
+    environment:
+      URL_RECUPERACAO: http://recuperacao:8002
+      # Vazia = modo simulado (offline). Defina no .env para usar o LLM real.
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_API_URL: ${LLM_API_URL:-https://api.openai.com/v1/chat/completions}
+      LLM_MODELO: ${LLM_MODELO:-gpt-4o-mini}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-20}
+    depends_on:
+      - recuperacao
+
+volumes:
+  dados:

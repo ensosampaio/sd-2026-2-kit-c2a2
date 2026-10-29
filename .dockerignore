@@ -1,0 +1,8 @@
+.venv/
+venv/
+.git/
+.env
+__pycache__/
+*.py[cod]
+servicos/ingestao/indice.json
+servicos/ingestao/indice.tmp
